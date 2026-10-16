@@ -1,12 +1,45 @@
+import os
+
 import pytest
 
-from image_to_text.config import Settings
+from image_to_text.config import ENV_PREFIX, Settings
 
 
 @pytest.fixture(autouse=True)
 def _clean_env(monkeypatch):
-    for name in ("ITT_CORS_ORIGINS", "ITT_MAX_UPLOAD_BYTES", "ITT_LOG_LEVEL"):
-        monkeypatch.delenv(name, raising=False)
+    for name in [n for n in os.environ if n.startswith(ENV_PREFIX)]:
+        monkeypatch.delenv(name)
+
+
+def test_reads_engine_settings(monkeypatch):
+    monkeypatch.setenv("ITT_DEFAULT_ENGINE", "RapidOCR")
+    monkeypatch.setenv("ITT_USE_ANGLE_CLS", "yes")
+    monkeypatch.setenv("ITT_WARM_UP", "off")
+    monkeypatch.setenv("ITT_ONNX_THREADS", "4")
+    monkeypatch.setenv("ITT_TEXT_SCORE", "0.6")
+
+    s = Settings.from_env()
+
+    assert s.default_engine == "rapidocr"
+    assert s.use_angle_cls is True
+    assert s.warm_up is False
+    assert s.onnx_threads == 4
+    assert s.text_score == 0.6
+
+
+@pytest.mark.parametrize(
+    ("name", "value"),
+    [("ITT_WARM_UP", "maybe"), ("ITT_TEXT_SCORE", "high"), ("ITT_TEXT_SCORE", "1.5")],
+)
+def test_invalid_engine_settings_name_the_variable(monkeypatch, name, value):
+    monkeypatch.setenv(name, value)
+    with pytest.raises(ValueError, match=name):
+        Settings.from_env()
+
+
+def test_rejects_non_positive_threads():
+    with pytest.raises(ValueError, match="ITT_ONNX_THREADS"):
+        Settings(onnx_threads=0)
 
 
 def test_defaults_when_env_is_empty():
