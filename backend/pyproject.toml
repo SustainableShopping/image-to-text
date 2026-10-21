@@ -7,6 +7,11 @@ dependencies = [
     "fastapi>=0.115",
     "uvicorn>=0.30",
     "numpy>=1.26",  # image arrays in the Engine interface (ocr/base.py)
+    "onnxtr[cpu]>=0.9",
+    "rapidocr>=3.9",
+    "onnxruntime>=1.18",
+    "pillow>=10.0",
+    "python-multipart>=0.0.9",
 ]
 
 [project.optional-dependencies]
@@ -28,6 +33,7 @@ packages = ["src/image_to_text"]
 testpaths = ["tests"]
 pythonpath = ["src"]
 addopts = "-q"
+markers = ["models: runs real OCR models (opt in with ITT_RUN_MODEL_TESTS=1)"]
 
 [tool.coverage.run]
 source = ["image_to_text"]
