@@ -40,9 +40,61 @@ RapidOCR ≈ 30 MB into its package folder in `.venv`. With `ITT_WARM_UP=true`
 (default) the default engine loads at startup; the other loads on its first
 request.
 
+## Develop in a dev container (recommended)
+
+`.devcontainer/` defines the environment every PR is built and tested in:
+Python 3.12 on Debian bookworm, uv 0.11.16, dependencies installed from
+`uv.lock` with `uv sync --frozen`. CI runs the same container.
+
+### One-command setup with DevPod
+
+Prerequisites: [Docker Desktop](https://www.docker.com/products/docker-desktop/)
+running and [DevPod](https://devpod.sh) installed. On Windows, DevPod Desktop
+installs its CLI as `C:\Program Files\DevPod\devpod-cli.exe` (not on `PATH`);
+use that path in place of `devpod` below, or add the folder to `PATH`.
+
+Once per machine:
+
+```powershell
+devpod provider add docker
+```
+
+Then, from a clone of the repo:
+
+```powershell
+devpod up . --ide none
+```
+
+When it finishes, open **http://localhost:8100/docs** in your browser. That one
+command builds the container, creates `.env` from `.env.example` (only if
+`.env` doesn't exist), installs dependencies from `uv.lock`, and starts the API.
+No terminal needs to stay open. The first start takes a few minutes (image
+build, ~100 MB of models); later starts take seconds.
+
+| Task | Command |
+|---|---|
+| Open a shell in the workspace | `devpod ssh image-to-text` (repo at `/workspaces/image-to-text`) |
+| Server log | `devpod ssh image-to-text --command "tail -f /tmp/itt-server.log"` |
+| Apply `.env` changes | `devpod ssh image-to-text --command "bash /workspaces/image-to-text/.devcontainer/start-server.sh --restart"` |
+| Stop / start again | `devpod stop image-to-text` / `devpod up . --ide none` (the API starts automatically) |
+| Use another port (e.g. 8100 is busy) | `$env:ITT_HOST_PORT="8200"; devpod up . --ide none --recreate`, then http://localhost:8200 |
+| Open in VS Code instead | `devpod up . --ide vscode` |
+
+The API is published on `127.0.0.1` only, so it isn't reachable from other
+machines on your network. Settings for the API come from `.env` (see
+[Settings](#settings-env)). The host port is read from `ITT_HOST_PORT` in your
+shell when the workspace is created, because DevPod sets up ports before
+`.env` exists.
+
+VS Code's Dev Containers extension reads the same files. Inside the container,
+the commands below work as-is (from `backend/`). The virtualenv lives outside
+the repo (`UV_PROJECT_ENVIRONMENT`), and docTR models are kept in the
+`itt-onnxtr-models` volume across rebuilds.
+
 ## Run it
 
-Prerequisite: Python ≥ 3.12 with [uv](https://docs.astral.sh/uv/).
+Prerequisite: Python ≥ 3.12 with [uv](https://docs.astral.sh/uv/), or the dev
+container above.
 
 ```powershell
 cd backend
@@ -70,8 +122,9 @@ unknown engine, `413` upload too large, `422` not a readable image.
 ## Settings (env)
 
 All settings are environment variables; the app does not read `.env` by
-itself. To use a file, copy `.env.example` to `.env` (repo root) and pass it
-to uv:
+itself. In the dev container, `.env` is created on first setup and loaded
+automatically when the API starts. Outside it, copy `.env.example` to `.env`
+(repo root) and pass it to uv:
 
 ```powershell
 uv run --env-file ../.env uvicorn image_to_text.api.app:app --port 8100
@@ -99,6 +152,11 @@ uv run ruff format .         # format
 uv run pytest --cov          # unit tests + coverage (target 80 %), no models needed
 $env:ITT_RUN_MODEL_TESTS="1"; uv run pytest -m models   # real engines (downloads models)
 ```
+
+CI (`.github/workflows/ci.yml`) runs lint, format check and the unit tests with
+coverage inside the dev container on every PR and push to `main`. The real
+model tests run only when the workflow is started manually with
+`model_tests` enabled.
 
 Before contributing, read [RULES.md](RULES.md). Commits and pushes happen only
 with explicit approval.
