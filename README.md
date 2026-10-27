@@ -90,6 +90,27 @@ uv run --env-file ../.env uvicorn image_to_text.api.app:app --port 8100
 | `ITT_TEXT_SCORE` | `0.5` | RapidOCR: drop lines below this confidence |
 | `ITT_WARM_UP` | `true` | load and run the default engine at startup |
 
+## Production image
+
+```powershell
+docker build -t image-to-text backend
+docker run --rm -p 8100:8100 -e ITT_ONNX_THREADS=2 image-to-text
+```
+
+All OCR models (docTR, RapidOCR including the angle classifier) are downloaded
+at build time and baked into the image (~1.2 GB), so containers start in
+seconds with no network access and run with a read-only filesystem. The
+container runs as a non-root user and has a Docker `HEALTHCHECK` on `/health`.
+With both engines loaded a process uses about 1.3 GiB of RAM; set
+`ITT_ONNX_THREADS` to the CPU cores available to each container.
+
+`.github/workflows/image.yml` builds, scans (Trivy) and smoke-tests the image
+on every PR. `.github/workflows/deploy.yml` pushes it to Artifact Registry and
+deploys it to the GCP VM described in the `infra-platform` repo:
+merges to `develop` go to the dev environment; merges to `main` go to
+production only when the `PROD_ENABLED` repository variable is `true`. All
+jobs are skipped until the `GCP_*` variables are set.
+
 ## Development
 
 ```powershell

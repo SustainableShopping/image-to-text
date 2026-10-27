@@ -1,0 +1,134 @@
+# Builds the production image and deploys it (see infra-platform).
+#   develop -> dev environment, automatically
+#   main    -> production, only when the PROD_ENABLED variable is 'true' (off for now)
+# Jobs are skipped until GCP_WIF_PROVIDER is set, so this is safe to merge before
+# the infrastructure exists.
+#
+# Variables (Settings > Secrets and variables > Actions; values from `terraform output`):
+#   repository/org: GCP_WIF_PROVIDER, GCP_BUILD_SA, GAR_HOST, GAR_PROJECT, GAR_REPOSITORY
+#   per GitHub Environment (dev, production): GCP_DEPLOY_SA, VM_PROJECT, VM_NAME,
+#     VM_ZONE, BASE_DOMAIN
+#   repository: PROD_ENABLED ('true' to deploy main); secret ALERT_WEBHOOK_URL (optional)
+name: Deploy
+
+on:
+  push:
+    branches: [develop, main]
+  workflow_dispatch:
+    inputs:
+      image_digest:
+        description: Redeploy an existing image instead of building (sha256:<64 hex>)
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-${{ github.ref_name }}
+  cancel-in-progress: false
+
+env:
+  SERVICE: ocr
+  IMAGE: ${{ vars.GAR_HOST }}/${{ vars.GAR_PROJECT }}/${{ vars.GAR_REPOSITORY }}/image-to-text
+  HOST_PREFIX: ocr-api
+  HEALTH_PATH: /health
+
+jobs:
+  build:
+    if: vars.GCP_WIF_PROVIDER != '' && inputs.image_digest == ''
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      id-token: write
+    outputs:
+      digest: ${{ steps.push.outputs.digest }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
+        with:
+          workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
+          service_account: ${{ vars.GCP_BUILD_SA }}
+
+      - uses: google-github-actions/setup-gcloud@aa5489c8933f4cc7a4f7d45035b3b1440c9c10db # v3.0.1
+
+      - name: Build
+        run: docker build --tag "$IMAGE:sha-$GITHUB_SHA" --tag "$IMAGE:$GITHUB_REF_NAME" backend
+
+      - name: Scan (fails on fixable HIGH/CRITICAL)
+        run: |
+          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
+            aquasec/trivy:0.76.1@sha256:790fd66d1697395d8693d1acaa1ea702406a20f109b6fc7bac8db623eca6c06c \
+            image --exit-code 1 --severity HIGH,CRITICAL --ignore-unfixed --no-progress \
+            "$IMAGE:sha-$GITHUB_SHA"
+
+      - name: Push
+        id: push
+        env:
+          GAR_HOST: ${{ vars.GAR_HOST }}
+        run: |
+          gcloud auth configure-docker "$GAR_HOST" --quiet
+          docker push --all-tags "$IMAGE"
+          ref=$(docker inspect --format '{{index .RepoDigests 0}}' "$IMAGE:sha-$GITHUB_SHA")
+          echo "digest=${ref#*@}" >> "$GITHUB_OUTPUT"
+
+  deploy:
+    needs: build
+    # develop -> dev; main -> production only once PROD_ENABLED is 'true'
+    if: >-
+      always() && vars.GCP_WIF_PROVIDER != '' &&
+      (github.ref == 'refs/heads/develop' || (github.ref == 'refs/heads/main' && vars.PROD_ENABLED == 'true')) &&
+      (needs.build.result == 'success' || (needs.build.result == 'skipped' && inputs.image_digest != ''))
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      id-token: write
+    environment:
+      name: ${{ github.ref == 'refs/heads/main' && 'production' || 'dev' }}
+      url: https://${{ env.HOST_PREFIX }}.${{ vars.BASE_DOMAIN }}${{ env.HEALTH_PATH }}
+    env:
+      VM_NAME: ${{ vars.VM_NAME }}
+      VM_ZONE: ${{ vars.VM_ZONE }}
+      VM_PROJECT: ${{ vars.VM_PROJECT }}
+      BASE_DOMAIN: ${{ vars.BASE_DOMAIN }}
+    steps:
+      - uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
+        with:
+          workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
+          service_account: ${{ vars.GCP_DEPLOY_SA }}
+
+      - uses: google-github-actions/setup-gcloud@aa5489c8933f4cc7a4f7d45035b3b1440c9c10db # v3.0.1
+
+      - name: Deploy
+        env:
+          DIGEST: ${{ inputs.image_digest || needs.build.outputs.digest }}
+        run: |
+          # The digest may come from a manual input: accept exactly sha256:<64 hex>, and
+          # quote every argument for the VM's shell.
+          [[ "$DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]] || { echo "::error::invalid image digest"; exit 1; }
+          remote=$(printf 'sudo /opt/ss/bin/deploy.sh %q %q' "$SERVICE" "$IMAGE@$DIGEST")
+          gcloud compute ssh "$VM_NAME" --zone "$VM_ZONE" --project "$VM_PROJECT" \
+            --tunnel-through-iap --quiet --command "$remote"
+
+      - name: Smoke test (public HTTPS, certificate verified)
+        run: curl -fsS --retry 5 --retry-all-errors "https://$HOST_PREFIX.$BASE_DOMAIN$HEALTH_PATH"
+
+  notify-failure:
+    needs: [build, deploy]
+    if: failure()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Post to the team channel
+        env:
+          WEBHOOK_URL: ${{ secrets.ALERT_WEBHOOK_URL }}
+          TEXT: "Deploy failed: ${{ github.repository }} @ ${{ github.ref_name }} — ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+        run: |
+          if [ -z "$WEBHOOK_URL" ]; then echo "ALERT_WEBHOOK_URL not set; GitHub's own failure notification still applies"; exit 0; fi
+          curl -fsS -X POST -H 'Content-Type: application/json' \
+            -d "$(jq -n --arg text "$TEXT" '{text: $text}')" "$WEBHOOK_URL"

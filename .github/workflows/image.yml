@@ -1,0 +1,46 @@
+name: Image
+
+on:
+  pull_request:
+  push:
+    branches: [develop, main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: image-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  image:
+    name: production image (build, scan, smoke test)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Build (downloads and bakes in the OCR models)
+        run: docker build --tag image-to-text:ci backend
+
+      - name: Scan (fails on fixable HIGH/CRITICAL)
+        run: |
+          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
+            aquasec/trivy:0.76.1@sha256:790fd66d1697395d8693d1acaa1ea702406a20f109b6fc7bac8db623eca6c06c \
+            image --exit-code 1 --severity HIGH,CRITICAL --ignore-unfixed --no-progress \
+            image-to-text:ci
+
+      - name: Smoke test (read-only filesystem, both engines)
+        run: |
+          docker run -d --name itt -p 8100:8100 --read-only --tmpfs /tmp \
+            -e ITT_ONNX_THREADS=2 image-to-text:ci
+          for _ in $(seq 90); do curl -fsS http://127.0.0.1:8100/health && break; sleep 1; done
+          convert -size 480x90 -gravity center label:"Ingredients: sugar, salt" smoke.png
+          for engine in doctr rapidocr; do
+            curl -fsS -F image=@smoke.png "http://127.0.0.1:8100/ocr?engine=$engine" | tee "out-$engine.json"
+            echo
+            grep -qi sugar "out-$engine.json"
+          done
+          docker logs itt
+          docker rm -f itt
