@@ -25,8 +25,10 @@ record the change in the log at the bottom.
 2. Before asking, show: the files changed (`git status`), a short diff summary,
    and the proposed commit message.
 3. Never force-push, never `--no-verify`, never rewrite `main`.
-4. `main` is the release branch. Work on `feat/…`, `fix/…`, `docs/…`,
-   `chore/…` branches.
+4. `develop` is the integration branch: branch `feat/…`, `fix/…`, `docs/…`,
+   `chore/…` off `develop` and open PRs into it; every merge deploys to the dev
+   environment. `main` is the release branch and only takes PRs from `develop`
+   (or `hotfix/…`, merged back into `develop` afterwards).
 5. Commit messages follow Conventional Commits: `<type>: <description>`
    (`feat`, `fix`, `refactor`, `docs`, `test`, `chore`, `perf`, `ci`).
 6. Remote: `git@github.com:SustainableShopping/image-to-text.git`.
@@ -120,3 +122,4 @@ A PR is done when:
 | Date | Change |
 |---|---|
 | 2026-10-14 | Project start: initial rules. |
+| 2026-10-27 | §1.4: `develop` integration branch (deploys to dev); `main` is release-only. |

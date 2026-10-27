@@ -1,9 +1,23 @@
 version: 2
 updates:
-  - package-ecosystem: docker
-    directory: /.devcontainer
+  # Python packages pinned in backend/uv.lock (security fixes such as Pillow's)
+  - package-ecosystem: uv
+    directory: /backend
     schedule:
       interval: weekly
+  # Base images of the production image (backend/Dockerfile) and the dev container.
+  # The Python version (3.12) is pinned in .python-version, uv.lock, both Dockerfiles
+  # and the dev container, and the OCR libraries must support a new one first:
+  # change it deliberately in its own PR, not through Dependabot.
+  - package-ecosystem: docker
+    directories: [/backend, /.devcontainer]
+    schedule:
+      interval: weekly
+    ignore:
+      - dependency-name: devcontainers/python
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
+      - dependency-name: python
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
   - package-ecosystem: github-actions
     directory: /
     schedule:
