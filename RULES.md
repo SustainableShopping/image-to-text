@@ -73,7 +73,15 @@ file.
    module load.
 6. Lint and format with `ruff`; functions < 50 lines, files < 800 lines.
 
-## 4. Tests
+## 4. Tests and Definition of Done
+
+A PR is done when:
+
+- **it runs in the same reproducible environment on anyone's machine:** the
+  dev container in `.devcontainer/` (used by DevPod, VS Code and CI), with
+  dependencies from `uv.lock` (`uv sync --frozen`);
+- **it ships automated tests** for what it changes, and CI (`.github/workflows/ci.yml`)
+  passes.
 
 1. Write or update the test with the change (TDD preferred).
 2. `uv run ruff check .` and `uv run pytest` must pass before asking to commit.
