@@ -1,0 +1,24 @@
+{
+  "name": "image-to-text",
+  "build": { "dockerfile": "Dockerfile" },
+  "remoteUser": "vscode",
+  "containerEnv": {
+    "UV_PROJECT_ENVIRONMENT": "/home/vscode/.venvs/image-to-text",
+    "UV_LINK_MODE": "copy"
+  },
+  "mounts": [
+    "source=itt-onnxtr-models,target=/home/vscode/.cache/onnxtr,type=volume"
+  ],
+  "appPort": ["127.0.0.1:${localEnv:ITT_HOST_PORT:8100}:8100"],
+  "postCreateCommand": "([ -f .env ] || cp .env.example .env) && cd backend && uv sync --frozen --extra dev",
+  "postStartCommand": "bash .devcontainer/start-server.sh",
+  "postAttachCommand": "bash .devcontainer/start-server.sh",
+  "customizations": {
+    "vscode": {
+      "extensions": ["ms-python.python", "charliermarsh.ruff"],
+      "settings": {
+        "python.defaultInterpreterPath": "/home/vscode/.venvs/image-to-text/bin/python"
+      }
+    }
+  }
+}
