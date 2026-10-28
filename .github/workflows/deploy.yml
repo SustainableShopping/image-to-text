@@ -6,8 +6,10 @@
 #
 # Variables (Settings > Secrets and variables > Actions; values from `terraform output`):
 #   repository/org: GCP_WIF_PROVIDER, GCP_BUILD_SA, GAR_HOST, GAR_PROJECT, GAR_REPOSITORY
-#   per GitHub Environment (dev, production): GCP_DEPLOY_SA, VM_PROJECT, VM_NAME,
-#     VM_ZONE, BASE_DOMAIN
+#   per GitHub Environment (dev, production): BASE_DOMAIN, plus one way into the VM:
+#     VM created by Terraform: GCP_DEPLOY_SA, VM_PROJECT, VM_NAME, VM_ZONE (IAP + OS Login)
+#     existing VM: VM_SSH_HOST, VM_SSH_KNOWN_HOSTS and the secret VM_SSH_DEPLOY_KEY, a key
+#       that can only run deploy.sh (infra-platform: deploy/bin/setup-ssh-access.sh)
 #   repository: PROD_ENABLED ('true' to deploy main); secret ALERT_WEBHOOK_URL (optional)
 name: Deploy
 
@@ -92,28 +94,45 @@ jobs:
       name: ${{ github.ref == 'refs/heads/main' && 'production' || 'dev' }}
       url: https://${{ env.HOST_PREFIX }}.${{ vars.BASE_DOMAIN }}${{ env.HEALTH_PATH }}
     env:
+      VM_SSH_HOST: ${{ vars.VM_SSH_HOST }}
       VM_NAME: ${{ vars.VM_NAME }}
       VM_ZONE: ${{ vars.VM_ZONE }}
       VM_PROJECT: ${{ vars.VM_PROJECT }}
       BASE_DOMAIN: ${{ vars.BASE_DOMAIN }}
     steps:
       - uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
+        if: env.VM_SSH_HOST == ''
         with:
           workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
           service_account: ${{ vars.GCP_DEPLOY_SA }}
 
       - uses: google-github-actions/setup-gcloud@aa5489c8933f4cc7a4f7d45035b3b1440c9c10db # v3.0.1
+        if: env.VM_SSH_HOST == ''
 
       - name: Deploy
         env:
           DIGEST: ${{ inputs.image_digest || needs.build.outputs.digest }}
+          KNOWN_HOSTS: ${{ vars.VM_SSH_KNOWN_HOSTS }}
+          SSH_KEY: ${{ secrets.VM_SSH_DEPLOY_KEY }}
         run: |
           # The digest may come from a manual input: accept exactly sha256:<64 hex>, and
           # quote every argument for the VM's shell.
           [[ "$DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]] || { echo "::error::invalid image digest"; exit 1; }
-          remote=$(printf 'sudo /opt/ss/bin/deploy.sh %q %q' "$SERVICE" "$IMAGE@$DIGEST")
-          gcloud compute ssh "$VM_NAME" --zone "$VM_ZONE" --project "$VM_PROJECT" \
-            --tunnel-through-iap --quiet --command "$remote"
+          if [ -n "$VM_SSH_HOST" ]; then
+            # Existing VM: the key's forced command runs deploy.sh with these two arguments
+            [ -n "$KNOWN_HOSTS" ] && [ -n "$SSH_KEY" ] \
+              || { echo "::error::set VM_SSH_KNOWN_HOSTS and the secret VM_SSH_DEPLOY_KEY on this environment"; exit 1; }
+            install -d -m 700 ~/.ssh
+            printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+            printf '%s\n' "$SSH_KEY" > ~/.ssh/deploy_key
+            chmod 600 ~/.ssh/deploy_key
+            ssh -i ~/.ssh/deploy_key -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o BatchMode=yes \
+              "ss-deploy@$VM_SSH_HOST" "$SERVICE $IMAGE@$DIGEST"
+          else
+            remote=$(printf 'sudo /opt/ss/bin/deploy.sh %q %q' "$SERVICE" "$IMAGE@$DIGEST")
+            gcloud compute ssh "$VM_NAME" --zone "$VM_ZONE" --project "$VM_PROJECT" \
+              --tunnel-through-iap --quiet --command "$remote"
+          fi
 
       - name: Smoke test (public HTTPS, certificate verified)
         run: curl -fsS --retry 5 --retry-all-errors "https://$HOST_PREFIX.$BASE_DOMAIN$HEALTH_PATH"
