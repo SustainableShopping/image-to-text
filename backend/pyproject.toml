@@ -11,7 +11,7 @@ dependencies = [
     "rapidocr>=3.9",
     "onnxruntime>=1.18",
     "pillow>=10.0",
-    "python-multipart>=0.0.9",
+    "python-multipart>=0.0.33",
 ]
 
 [project.optional-dependencies]
