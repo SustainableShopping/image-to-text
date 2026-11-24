@@ -142,6 +142,7 @@ uv run --env-file ../.env uvicorn image_to_text.api.app:app --port 8100
 | `ITT_ONNX_THREADS` | `8` | ONNX Runtime threads per engine |
 | `ITT_TEXT_SCORE` | `0.5` | RapidOCR: drop lines below this confidence |
 | `ITT_WARM_UP` | `true` | load and run the default engine at startup |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | empty (off) | OTLP/HTTP collector, e.g. `http://localhost:4318`: one trace span per `/ocr` stage (upload read, decode, engine and its det/cls/rec), with sizes, line counts and confidences, never image bytes or text. A caller's `traceparent` header joins its trace |
 
 ## Production image
 

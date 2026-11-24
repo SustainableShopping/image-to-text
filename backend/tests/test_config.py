@@ -2,13 +2,20 @@ import os
 
 import pytest
 
-from image_to_text.config import ENV_PREFIX, Settings
+from image_to_text.config import ENV_PREFIX, OTEL_ENDPOINT_ENV, Settings
 
 
 @pytest.fixture(autouse=True)
 def _clean_env(monkeypatch):
     for name in [n for n in os.environ if n.startswith(ENV_PREFIX)]:
         monkeypatch.delenv(name)
+    monkeypatch.delenv(OTEL_ENDPOINT_ENV, raising=False)
+
+
+def test_tracing_is_off_unless_the_otel_endpoint_is_set(monkeypatch):
+    assert Settings.from_env().otel_endpoint is None
+    monkeypatch.setenv(OTEL_ENDPOINT_ENV, " http://collector:4318 ")
+    assert Settings.from_env().otel_endpoint == "http://collector:4318"
 
 
 def test_reads_engine_settings(monkeypatch):
