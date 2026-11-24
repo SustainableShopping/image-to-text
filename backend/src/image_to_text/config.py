@@ -10,6 +10,9 @@ import os
 from dataclasses import dataclass
 
 ENV_PREFIX = "ITT_"
+# The standard OpenTelemetry variable, not ITT_-prefixed, so the same name works for
+# every service and for the OTel SDK itself. Unset: tracing is off.
+OTEL_ENDPOINT_ENV = "OTEL_EXPORTER_OTLP_ENDPOINT"
 _LOG_LEVELS = frozenset({"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"})
 _TRUE = frozenset({"1", "true", "yes", "on"})
 _FALSE = frozenset({"0", "false", "no", "off"})
@@ -76,6 +79,7 @@ class Settings:
     onnx_threads: int = 8
     text_score: float = 0.5
     warm_up: bool = True
+    otel_endpoint: str | None = None  # OTLP/HTTP base URL, e.g. http://collector:4318
 
     def __post_init__(self) -> None:
         for name in ("max_upload_bytes", "det_limit_side_len", "onnx_threads"):
@@ -104,4 +108,5 @@ class Settings:
             onnx_threads=_env_int("ONNX_THREADS", d.onnx_threads),
             text_score=_env_float("TEXT_SCORE", d.text_score),
             warm_up=_env_bool("WARM_UP", d.warm_up),
+            otel_endpoint=(os.environ.get(OTEL_ENDPOINT_ENV) or "").strip() or None,
         )
