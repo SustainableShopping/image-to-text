@@ -186,5 +186,31 @@ coverage inside the dev container on every PR and push to `main`. The real
 model tests run only when the workflow is started manually with
 `model_tests` enabled.
 
+## OCR evaluation
+
+Measures each engine's accuracy and speed on label photos against the ingredient
+section written out by hand:
+
+```powershell
+cd backend
+uv run python -m image_to_text.evaluation --images "<folder with the photos>"
+uv run python -m image_to_text.evaluation --images "<folder>" --draft   # draft expected text
+```
+
+- Cases are `eval/cases/<id>.case.json`: `id`, `image` (file name), `ocr_text` (the
+  ingredient section as printed, heading included), optional `tags`. The two
+  committed cases have no photos in git: evaluation images stay local (RULES.md §5.4).
+- Per engine: character and word error rate of that section, aligned inside the
+  whole OCR text (case and line breaks ignored), word recall, and read time
+  p50 / p95 after a warm-up read.
+- `--draft` writes `<id>.case.draft.json` from OCR output for photos without
+  expected text: cut it to the ingredient section and correct it against the photo.
+- Results go to `eval/results/ocr-<time>.jsonl` (git-ignored: it holds the OCR
+  text of every photo). The same case file format, with expected ingredients,
+  feeds the ingredient service's step evaluation, which takes this file as
+  `--ocr-results` to score the later steps on real OCR text.
+- It runs real models, so it is not part of CI; its metrics and runner are unit
+  tested with a fake engine.
+
 Before contributing, read [RULES.md](RULES.md). Commits and pushes happen only
 with explicit approval.

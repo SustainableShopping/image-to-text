@@ -1,0 +1,11 @@
+{
+  "_note": "Photo kept local (RULES.md 5.4): pass its folder with --images. The same case, with expected ingredients, is in the ingredient service's evaluation data.",
+  "id": "ingred2",
+  "image": "ingred2.jpg",
+  "tags": [
+    "bilingual",
+    "nested",
+    "bullets"
+  ],
+  "ocr_text": "Ingredients: Whole milk • Sugars (sugar, strawberry puree, raspberry puree, blueberry puree, blackberry puree) • Water • Milk protein concentrate • Modified corn starch • Natural and artifical flavour • Guar gum • Bacterial cultures • Carrageenan • Sodium citrate • Citric acid • Potassium sorbate • Sucralose."
+}
