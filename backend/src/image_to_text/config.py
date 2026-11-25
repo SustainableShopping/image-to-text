@@ -16,6 +16,8 @@ OTEL_ENDPOINT_ENV = "OTEL_EXPORTER_OTLP_ENDPOINT"
 _LOG_LEVELS = frozenset({"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"})
 _TRUE = frozenset({"1", "true", "yes", "on"})
 _FALSE = frozenset({"0", "false", "no", "off"})
+# The photo endpoint is reachable from the internet on dev; refuse guessable passwords.
+MIN_VIEW_PASSWORD = 12
 
 
 def _raw(name: str) -> str | None:
@@ -80,11 +82,38 @@ class Settings:
     text_score: float = 0.5
     warm_up: bool = True
     otel_endpoint: str | None = None  # OTLP/HTTP base URL, e.g. http://collector:4318
+    # Scan journey records (journey.py): full input/output of every /ocr stage, sent
+    # as OTel logs. Needs otel_endpoint too. Off by default: they hold label text.
+    journey_enabled: bool = False
+    journey_photo_dir: str | None = None  # keep uploaded photos here; unset: don't
+    # 14 days = the dev OpenObserve retention, so photos and records expire together.
+    journey_photo_retention_days: int = 14
+    # 512 KiB fits the longest real label's OCR output with room to spare, and stays
+    # well under the collector's 4 MiB request limit.
+    journey_max_body_bytes: int = 512 * 1024
+    # Cap on all kept photos together: 2 GiB is ~500-1000 phone photos and a small share
+    # of the dev VM disk. Past it, photos are not kept (scans still work).
+    journey_photo_max_mb: int = 2048
+    journey_view_user: str = "journey"
+    journey_view_password: str | None = None  # unset: photo endpoint off
 
     def __post_init__(self) -> None:
-        for name in ("max_upload_bytes", "det_limit_side_len", "onnx_threads"):
+        for name in (
+            "max_upload_bytes",
+            "det_limit_side_len",
+            "onnx_threads",
+            "journey_photo_retention_days",
+            "journey_max_body_bytes",
+            "journey_photo_max_mb",
+        ):
             if getattr(self, name) <= 0:
                 raise ValueError(f"{ENV_PREFIX}{name.upper()} must be > 0")
+        password = self.journey_view_password
+        if password is not None and len(password) < MIN_VIEW_PASSWORD:
+            raise ValueError(
+                f"{ENV_PREFIX}JOURNEY_VIEW_PASSWORD must be at least "
+                f"{MIN_VIEW_PASSWORD} characters"
+            )
         if not 0.0 <= self.text_score <= 1.0:
             raise ValueError(f"{ENV_PREFIX}TEXT_SCORE must be between 0 and 1")
         if self.log_level not in _LOG_LEVELS:
@@ -109,4 +138,17 @@ class Settings:
             text_score=_env_float("TEXT_SCORE", d.text_score),
             warm_up=_env_bool("WARM_UP", d.warm_up),
             otel_endpoint=(os.environ.get(OTEL_ENDPOINT_ENV) or "").strip() or None,
+            journey_enabled=_env_bool("JOURNEY_ENABLED", d.journey_enabled),
+            journey_photo_dir=_raw("JOURNEY_PHOTO_DIR"),
+            journey_photo_retention_days=_env_int(
+                "JOURNEY_PHOTO_RETENTION_DAYS", d.journey_photo_retention_days
+            ),
+            journey_max_body_bytes=_env_int(
+                "JOURNEY_MAX_BODY_BYTES", d.journey_max_body_bytes
+            ),
+            journey_photo_max_mb=_env_int(
+                "JOURNEY_PHOTO_MAX_MB", d.journey_photo_max_mb
+            ),
+            journey_view_user=_env_str("JOURNEY_VIEW_USER", d.journey_view_user),
+            journey_view_password=_raw("JOURNEY_VIEW_PASSWORD"),
         )

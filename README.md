@@ -143,6 +143,12 @@ uv run --env-file ../.env uvicorn image_to_text.api.app:app --port 8100
 | `ITT_TEXT_SCORE` | `0.5` | RapidOCR: drop lines below this confidence |
 | `ITT_WARM_UP` | `true` | load and run the default engine at startup |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | empty (off) | OTLP/HTTP collector, e.g. `http://localhost:4318`: one trace span per `/ocr` stage (upload read, decode, engine and its det/cls/rec), with sizes, line counts and confidences, never image bytes or text. A caller's `traceparent` header joins its trace |
+| `ITT_JOURNEY_ENABLED` | `false` | scan journey records: the full input and output of every `/ocr` stage (`ocr.received`, `ocr.decode`, `ocr.engine` with all lines, `ocr.response`) as OTel log records with `journey=true`, sent to `OTEL_EXPORTER_OTLP_ENDPOINT`. They hold label text: enable only where that is agreed. IDs come from `X-Session-ID` / `X-Scan-ID` / `X-Scan-Attempt` (a scan ID is generated if missing and returned in `X-Scan-ID` while journey records are on) |
+| `ITT_JOURNEY_PHOTO_DIR` | empty (photos not kept) | with journey on and a view password set, keep each upload that decodes as an image as `<dir>/<YYYY-MM-DD>/<scan_id>-<attempt>.<ext>` (the image has `/data/journey-photos` ready for a volume) |
+| `ITT_JOURNEY_PHOTO_MAX_MB` | `2048` | cap on all kept photos together; past it new photos are not kept (scans still work) |
+| `ITT_JOURNEY_PHOTO_RETENTION_DAYS` | `14` | delete kept photos older than this (checked at startup and on the first save of each day) |
+| `ITT_JOURNEY_MAX_BODY_BYTES` | `524288` (512 KiB) | larger record bodies are cut to a JSON preview marked `journey.truncated` |
+| `ITT_JOURNEY_VIEW_USER` / `ITT_JOURNEY_VIEW_PASSWORD` | `journey` / empty (endpoint off) | HTTP Basic login for `GET /v1/journey/photos/{scan_id}/{attempt}`; password at least 12 characters |
 
 ## Production image
 
