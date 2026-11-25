@@ -100,3 +100,46 @@ def test_settings_are_immutable():
     s = Settings()
     with pytest.raises(AttributeError):
         s.log_level = "DEBUG"  # type: ignore[misc]
+
+
+def test_journey_is_off_by_default():
+    s = Settings.from_env()
+    assert s.journey_enabled is False
+    assert s.journey_photo_dir is None
+    assert s.journey_photo_retention_days == 14
+    assert s.journey_max_body_bytes == 512 * 1024
+    assert s.journey_view_password is None
+    assert s.journey_photo_max_mb == 2048
+
+
+def test_reads_journey_settings(monkeypatch):
+    monkeypatch.setenv("ITT_JOURNEY_ENABLED", "true")
+    monkeypatch.setenv("ITT_JOURNEY_PHOTO_DIR", "/data/journey-photos")
+    monkeypatch.setenv("ITT_JOURNEY_PHOTO_RETENTION_DAYS", "7")
+    monkeypatch.setenv("ITT_JOURNEY_MAX_BODY_BYTES", "1000")
+    monkeypatch.setenv("ITT_JOURNEY_VIEW_USER", "ops")
+    monkeypatch.setenv("ITT_JOURNEY_VIEW_PASSWORD", "a-long-password")
+
+    s = Settings.from_env()
+
+    assert s.journey_enabled is True
+    assert s.journey_photo_dir == "/data/journey-photos"
+    assert s.journey_photo_retention_days == 7
+    assert s.journey_max_body_bytes == 1000
+    assert s.journey_view_user == "ops"
+    assert s.journey_view_password == "a-long-password"
+
+
+@pytest.mark.parametrize(
+    ("name", "value"),
+    [
+        ("ITT_JOURNEY_PHOTO_RETENTION_DAYS", "0"),
+        ("ITT_JOURNEY_MAX_BODY_BYTES", "-1"),
+        ("ITT_JOURNEY_VIEW_PASSWORD", "short"),
+        ("ITT_JOURNEY_PHOTO_MAX_MB", "0"),
+    ],
+)
+def test_invalid_journey_settings_name_the_variable(monkeypatch, name, value):
+    monkeypatch.setenv(name, value)
+    with pytest.raises(ValueError, match=name):
+        Settings.from_env()

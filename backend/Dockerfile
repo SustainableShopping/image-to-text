@@ -15,11 +15,13 @@ COPY src ./src
 RUN uv sync --frozen --no-editable
 
 FROM python:3.12-slim-bookworm@sha256:935c3c5b12357a7e10caa9c1e6ca5692344d97cf229832ef584be2cec9fc03df
-# OpenCV (pulled in by rapidocr) needs libGL and GLib at runtime.
+# OpenCV (pulled in by rapidocr) needs libGL and GLib at runtime. /data/journey-photos
+# is owned by `app` so a volume mounted there (ITT_JOURNEY_PHOTO_DIR) is writable.
 RUN apt-get update \
     && apt-get install -y --no-install-recommends libgl1 libglib2.0-0 \
     && rm -rf /var/lib/apt/lists/* \
-    && useradd --system --uid 10001 --no-create-home app
+    && useradd --system --uid 10001 --no-create-home app \
+    && mkdir -p /data/journey-photos && chown app /data/journey-photos
 COPY --from=build /app/.venv /app/.venv
 ENV PATH=/app/.venv/bin:$PATH \
     PYTHONUNBUFFERED=1 \

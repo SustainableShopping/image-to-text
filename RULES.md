@@ -95,7 +95,11 @@ A PR is done when:
    Use `.env` (git-ignored); keep `.env.example` current.
 2. Validate every upload at the boundary: size limit, decodable image, nothing
    else trusted.
-3. Don't log image bytes or full OCR text at INFO level.
+3. Don't log image bytes or full OCR text at INFO level. The one exception
+   is scan journey recording (`ITT_JOURNEY_ENABLED`, off by default), which
+   sends full OCR input/output to its own access-controlled stream and keeps
+   photos in a private volume, both with limited retention. It is switched on
+   per environment by an explicit decision, never by default in production.
 4. Real user photos never go into the repo; evaluation images stay local or in
    private storage.
 
@@ -123,3 +127,4 @@ A PR is done when:
 |---|---|
 | 2026-10-14 | Project start: initial rules. |
 | 2026-10-27 | §1.4: `develop` integration branch (deploys to dev); `main` is release-only. |
+| 2026-11-24 | §5.3: exception for opt-in scan journey recording (full OCR text and photos, limited retention). |
