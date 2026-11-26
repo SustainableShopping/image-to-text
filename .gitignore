@@ -36,3 +36,5 @@ eval/**
 .vscode/
 .DS_Store
 Thumbs.db
+
+backend/src/image_to_text/ocr-dummy-data
