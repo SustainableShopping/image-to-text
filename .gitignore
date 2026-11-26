@@ -23,12 +23,13 @@ CHANGELOG.md
 # logs
 *.log
 
-# evaluation images are private or regenerable; keep labels and reports
-eval/**/*.png
-eval/**/*.jpg
-eval/**/*.jpeg
-eval/**/*.webp
-eval/**/predictions.csv
+# eval/: only case files (expected text) and READMEs are kept. Photos stay local
+# (RULES.md 5.4) whatever their extension or case (.JPG, .heic ...); drafts and
+# results hold the OCR text of every photo read, which may be private labels.
+eval/**
+!eval/**/
+!eval/**/*.case.json
+!eval/**/README.md
 
 # editors / OS
 .idea/
