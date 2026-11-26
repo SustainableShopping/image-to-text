@@ -1,5 +1,5 @@
 {
-  "_note": "Photo kept local (RULES.md 5.4): pass its folder with --images. The same case, with expected ingredients, is in the ingredient service's evaluation data.",
+  "_note": "Photo kept local (RULES.md 5.4): pass its folder with --images.",
   "id": "ingred2",
   "image": "ingred2.jpg",
   "tags": [

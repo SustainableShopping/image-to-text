@@ -263,3 +263,65 @@ def test_cli_drafts_cases_for_new_photos_and_missing_text(
 def test_cli_exit_2_on_bad_input(tmp_path, fake_engines, capsys):
     assert cli.main(["--cases", str(tmp_path / "nope")]) == 2
     assert "not found" in capsys.readouterr().err
+
+
+def test_photos_next_to_the_case_are_found_when_images_is_also_given(tmp_path):
+    write_case(tmp_path / "cases", {"id": "a", "image": "a.png"}, png())
+    (tmp_path / "photos").mkdir()  # --images given, but this photo is not in it
+    [row] = evaluate(
+        load_cases([tmp_path / "cases"]),
+        {"e": FakeEngine("e", ["x"])},
+        tmp_path / "photos",
+        1,
+    )
+    assert row["error"] is None and row["text"] == "x"
+
+
+def test_draft_with_images_finds_photos_in_both_folders(tmp_path, fake_engines):
+    cases, photos = tmp_path / "cases", tmp_path / "photos"
+    write_case(cases, {"id": "known", "image": "known.png"}, png())  # photo by the case
+    (cases / "beside.png").write_bytes(png())  # new photo by the cases
+    photos.mkdir()
+    (photos / "elsewhere.png").write_bytes(png())  # new photo in --images
+    assert cli.main(["--cases", str(cases), "--images", str(photos), "--draft"]) == 0
+    drafts = sorted(p.name for p in cases.glob("*.case.draft.json"))
+    assert drafts == [
+        "beside.case.draft.json",
+        "elsewhere.case.draft.json",
+        "known.case.draft.json",
+    ]
+    data = json.loads((cases / "elsewhere.case.draft.json").read_text(encoding="utf-8"))
+    assert data["image"] == "elsewhere.png"  # a file name, not the full local path
+    assert "Read by doctr." in data["_note"]
+
+
+def test_draft_never_overwrites_an_existing_draft(tmp_path, fake_engines, capsys):
+    cases = tmp_path / "cases"
+    write_case(cases, {"id": "a", "image": "a.png"}, png())
+    assert cli.main(["--cases", str(cases), "--draft"]) == 0
+    draft = cases / "a.case.draft.json"
+    draft.write_text('{"id": "a", "ocr_text": "my corrections"}', encoding="utf-8")
+    assert cli.main(["--cases", str(cases), "--draft"]) == 0
+    assert "my corrections" in draft.read_text(encoding="utf-8")
+    assert "a.case.draft.json exists" in capsys.readouterr().err
+
+
+def test_draft_exits_1_when_a_photo_cannot_be_read(tmp_path, fake_engines):
+    write_case(tmp_path, {"id": "a", "image": "a.png"}, b"not an image")
+    assert cli.main(["--cases", str(tmp_path), "--draft"]) == 1
+
+
+def test_cli_exits_1_when_every_read_fails(tmp_path, monkeypatch, capsys):
+    broken = {"doctr": FakeEngine("doctr", [], fail=True)}
+    monkeypatch.setattr(cli, "build_engines", lambda names: broken)
+    write_case(tmp_path / "cases", {"id": "a", "image": "a.png"}, png())
+    out = tmp_path / "ocr.jsonl"
+    assert cli.main(["--cases", str(tmp_path / "cases"), "--out", str(out)]) == 1
+    assert "every read failed" in capsys.readouterr().err
+
+
+def test_cli_exit_2_on_an_unknown_engine(tmp_path, capsys):
+    write_case(tmp_path, {"id": "a", "image": "a.png"}, png())
+    # the real registry: it rejects the name before loading any model
+    assert cli.main(["--cases", str(tmp_path), "--engine", "nope"]) == 2
+    assert "unknown engine 'nope'" in capsys.readouterr().err

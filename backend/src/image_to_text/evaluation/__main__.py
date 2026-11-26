@@ -4,9 +4,9 @@
     uv run python -m image_to_text.evaluation --images P --engine rapidocr --repeat 3
     uv run python -m image_to_text.evaluation --images P --draft  # draft expected text
 
-Writes one JSON line per (case, engine) to --out. Pass that file to the ingredient
-service's evaluation (`ingredient-eval --ocr-results <file>`) to score the later steps
-on real OCR text. Exit code 2 on bad case files.
+Writes one JSON line per (case, engine) to --out: the input for scoring the later
+pipeline steps on real OCR text. Exit code: 0 done, 1 every read failed (or a draft's
+photo could not be read), 2 bad input (case files, unknown engine).
 """
 
 from __future__ import annotations
@@ -73,7 +73,8 @@ def _args(argv: Sequence[str] | None) -> argparse.Namespace:
     ap.add_argument(
         "--draft",
         action="store_true",
-        help="write <id>.case.draft.json for photos without expected text",
+        help="write <id>.case.draft.json for photos without expected text "
+        "(first --engine only; existing drafts are kept)",
     )
     args = ap.parse_args(argv)
     if args.repeat < 1:
@@ -100,14 +101,18 @@ def _draft_targets(
         ):
             if photo.stem not in known and photo.name not in known:
                 known.add(photo.stem)
-                targets.append(
+                targets.append(  # full path: read from where it was found
                     OcrCase(
                         id=photo.stem,
                         path=home / f"{photo.stem}.case.json",
-                        image=photo.name,
+                        image=str(photo.resolve()),
                     )
                 )
     return targets
+
+
+def _draft_path(case: OcrCase) -> Path:
+    return case.folder / f"{case.id}{DRAFT_SUFFIX}"
 
 
 def write_drafts(
@@ -115,30 +120,37 @@ def write_drafts(
     folders: Sequence[Path],
     images: Path | None,
     engines: Mapping[str, Engine],
-) -> list[Path]:
+) -> tuple[list[Path], int]:
+    """(drafts written, photos that could not be read). Uses the first engine only.
+    A draft that already exists is left alone: it may hold corrections."""
     first = dict(list(engines.items())[:1])
-    targets = _draft_targets(cases, folders, images)
+    targets = []
+    for case in _draft_targets(cases, folders, images):
+        if _draft_path(case).exists():
+            print(f"skipped {case.id}: {_draft_path(case)} exists", file=sys.stderr)
+        else:
+            targets.append(case)
     rows = {r["case_id"]: r for r in evaluate(targets, first, images or None, 1)}
-    written = []
+    written, failed = [], 0
     for case in targets:
         row = rows.get(case.id)
         if row is None or row["error"]:
+            failed += 1
             print(
                 f"skipped {case.id}: {row['error'] if row else 'no photo'}",
                 file=sys.stderr,
             )
             continue
         draft = {
-            "_note": DRAFT_NOTE,
+            "_note": DRAFT_NOTE + f" Read by {next(iter(first))}.",
             "id": case.id,
-            "image": case.image,
+            "image": Path(str(case.image)).name,
             "tags": list(case.tags),
             "ocr_text": row["text"],
         }
-        path = case.folder / f"{case.id}{DRAFT_SUFFIX}"
-        _write_json(path, draft)
-        written.append(path)
-    return written
+        _write_json(_draft_path(case), draft)
+        written.append(_draft_path(case))
+    return written, failed
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -149,11 +161,16 @@ def main(argv: Sequence[str] | None = None) -> int:
     except CaseError as e:
         print(f"error: {e}", file=sys.stderr)
         return 2
-    engines = build_engines(args.engine)
+    try:
+        engines = build_engines(args.engine)
+    except KeyError as e:
+        print(f"error: {e.args[0]}", file=sys.stderr)
+        return 2
     if args.draft:
-        for path in write_drafts(cases, folders, args.images, engines):
+        written, failed = write_drafts(cases, folders, args.images, engines)
+        for path in written:
             print(f"draft: {path}")
-        return 0
+        return 1 if failed else 0
     rows = evaluate(cases, engines, args.images, args.repeat)
     stamp = datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
     out = args.out or DEFAULT_RESULTS / f"ocr-{stamp}.jsonl"
@@ -167,7 +184,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     print(render_table(summarize(rows)))
     print(f"\nresults: {out}")
-    print(f"next, in the ingredient service repo: ingredient-eval --ocr-results {out}")
+    if rows and all(r["error"] for r in rows):
+        print(
+            "error: every read failed (see the error field in the results)",
+            file=sys.stderr,
+        )
+        return 1
     return 0
 
 

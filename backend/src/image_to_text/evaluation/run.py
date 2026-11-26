@@ -20,7 +20,11 @@ WARM_UP_IMAGE_SHAPE = (64, 256, 3)  # blank image, as EngineRegistry.warm_up; no
 
 
 def image_path(case: OcrCase, images: Path | None) -> Path:
-    return (images or case.folder) / str(case.image)
+    """The photo: in --images when it is there, else next to the case file."""
+    name = str(case.image)
+    if images is not None and (images / name).is_file():
+        return images / name
+    return case.folder / name
 
 
 def _ms(started: float) -> float:

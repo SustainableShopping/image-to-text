@@ -206,9 +206,11 @@ uv run python -m image_to_text.evaluation --images "<folder>" --draft   # draft 
 - `--draft` writes `<id>.case.draft.json` from OCR output for photos without
   expected text: cut it to the ingredient section and correct it against the photo.
 - Results go to `eval/results/ocr-<time>.jsonl` (git-ignored: it holds the OCR
-  text of every photo). The same case file format, with expected ingredients,
-  feeds the ingredient service's step evaluation, which takes this file as
-  `--ocr-results` to score the later steps on real OCR text.
+  text of every photo). It is also the input for scoring the later pipeline steps
+  on real OCR text; a case file may carry their expected output too.
+- `--draft` reads with the first `--engine` only and never overwrites an existing
+  draft. Exit code 1 when every read failed, 2 for bad case files or an unknown
+  engine.
 - It runs real models, so it is not part of CI; its metrics and runner are unit
   tested with a fake engine.
 

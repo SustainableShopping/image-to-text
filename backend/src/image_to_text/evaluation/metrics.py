@@ -53,7 +53,7 @@ def word_recall(expected: str, ocr_text: str) -> float | None:
 
 
 def pct(values: Sequence[float], q: int) -> float | None:
-    """q-th percentile (inclusive, 1 decimal), as the ingredient service reports it."""
+    """q-th percentile: inclusive method, rounded to 1 decimal."""
     if not values:
         return None
     if len(values) == 1:
